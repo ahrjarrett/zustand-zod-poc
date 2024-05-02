@@ -9,19 +9,11 @@ import { Parser } from "../lib/parser"
 import * as Lens from "../lib/lens"
 import * as object from "../lib/object"
 import * as fn from "../lib/function"
+import { create } from '../lib/create'
 import { z as Z } from "../lib/schema"
 import { Middleware } from '../lib/middleware'
 
 const parseInt = (u: unknown) => Number.isNaN(+String(u)) ? 0 : +String(u)
-
-const createStore
-  : <S extends Z.any>(schema: S) => Middleware.withLenses<StoreApi<Parser.deriveEmpty<S>>, S>
-  = (schema) =>
-    fn.pipe(
-      (() => Parser.empty(schema) as never), /** TODO: fix type assertion */
-      zustand.create(),
-      Middleware.withLenses(schema),
-    )
 
 interface UseInput {
   value: string
@@ -104,7 +96,7 @@ const User = z.object({
 })
 
 
-const Store = createStore(User)
+const Store = create(User)
 console.log("Store", Store)
   ; (window as any).Store = Store
 
@@ -116,11 +108,6 @@ export function App() {
       </header>
       <article>
         <section>
-          <h2>Name</h2>
-          <Attribute path={["name", "first"]} store={Store} />
-          <Attribute path={["name", "last"]} store={Store} />
-        </section>
-        <section>
           <h2>Birth date</h2>
           <Attribute path={["dob", "dd"]} store={Store} />
           {`-`}
@@ -128,7 +115,6 @@ export function App() {
           {`-`}
           <Attribute path={["dob", "yyyy"]} store={Store} />
         </section>
-
         <section>
           <Title title="dob-dd" />
           <Input
@@ -165,7 +151,11 @@ export function App() {
 //   ;
 // type boundStoreFromSchema<schema extends Z.any>
 //   = BoundStore<UseBoundStore<StoreApi<schema["_type"]>> & storeFromSchema<schema>>
-
-type id<x> = x
-/* @ts-expect-error hush */
-interface Store<S extends {}> extends id<S> { }
+//         <section>
+//           <h2>Name</h2>
+//           <Attribute path={["name", "first"]} store={Store} />
+//           <Attribute path={["name", "last"]} store={Store} />
+//         </section>
+// type id<x> = x
+// /* @ts-expect-error hush */
+// interface Store<S extends {}> extends id<S> { }
