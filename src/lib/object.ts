@@ -23,7 +23,22 @@ export namespace nonempty {
     = (x, keys = objectKeys(x)) => [keys[0], ...keys.slice(1)]
 }
 
-export declare function pick<KS extends any.keys>(...keys: KS): <T extends any.indexedBy<KS[number]>>(object: T) => { [K in KS[number]]: T[K] }
+export function softPick<KS extends any.keys>(...keys: KS): <T extends object>(object: T) =>
+  { [K in keyof T as K extends KS[number] ? K : never]: T[K] }
+
+export function softPick<KS extends any.keys>(...keys: KS) {
+  return <T extends object>(object: T) => {
+    let out = {}
+    for (const key of keys)
+      if (key in object)
+        out[key] = object[key]
+    return out
+  }
+}
+
+export const pick
+  : <KS extends any.keys>(...keys: KS) => <T extends any.indexedBy<KS[number]>>(object: T) => { [K in KS[number]]: T[K] }
+  = softPick as never
 
 declare namespace filter {
   type eval<t> = never | { [k in keyof t]: t[k] }
@@ -194,6 +209,12 @@ export function filterKeys<A extends any.index, B extends A, const T extends any
     if (globalThis.Object.keys(object).length === keep.length) return object
     else return Object.fromEntries(keep)
   }
+}
+
+export function fromKeys<KS extends any.keys>(...keys: KS): { [K in KS[number]]: K }
+export function fromKeys<KS extends any.keys>(keys: KS): { [K in KS[number]]: K }
+export function fromKeys(...keys: [any.keys] | (any.keys)) {
+  return keys.flat(1).reduce((acc, key: string | number) => { acc[key] = key; return acc }, {})
 }
 
 export function get<K extends any.index>(key: K): <const T extends any.indexedBy<K>>(object: T) => T[K]

@@ -1,11 +1,12 @@
 import type { any, Kind, mut, traversable } from "any-ts"
 import { z } from "zod"
 
-import { adaptor, z as Z } from "./schema"
+import { adaptor, z as zod } from "./schema"
 import * as object from "./object"
 import * as fn from "./function"
 import { Tree } from "./tree"
 import * as Lens from "./lens"
+import type { StoreApi, UseBoundStore } from "zustand"
 
 const isObject = (u: unknown): u is Record<string, any> =>
   typeof u === "object" && u !== null && !Array.isArray(u)
@@ -40,11 +41,11 @@ export const SchemaKindToType = {
 export const TypeToSchemaKind = object.invert(SchemaKindToType)
 
 export namespace Context {
-  export type empty<S extends Z.any> =
+  export type empty<S extends zod.any> =
     { schema: S; path: [] }
-  export const empty = <S extends Z.any>(schema: S): Context.empty<S> =>
+  export const empty = <S extends zod.any>(schema: S): Context.empty<S> =>
     ({ schema, path: [] })
-  export interface Leaf<S extends Z.any = Z.any> { schema: S, path: any.keys }
+  export interface Leaf<S extends zod.any = zod.any> { schema: S, path: any.keys }
   export type next<_kind extends SchemaKind, prev extends Context.Leaf, schema, ix extends any.key> = never |
   { schema: schema; path: [...prev['path'], ix] }
   export const next = (kind: SchemaKind, prev: Context.Leaf, schema: any.type, segment?: any.key): Context.Leaf =>
@@ -55,7 +56,7 @@ export namespace Context {
 }
 
 export declare namespace Model {
-  interface leaf<T, S extends Z.any> {
+  interface leaf<T, S extends zod.any> {
     value: T,
     schema: S
     errors: any[],
@@ -64,8 +65,8 @@ export declare namespace Model {
 }
 
 export namespace Model {
-  export const leaf = <S extends Z.any, context extends Context.Leaf<S>>(ctx: context) => ({
-    type: SchemaKindToType[Z.typeName.get(ctx.schema)],
+  export const leaf = <S extends zod.any, context extends Context.Leaf<S>>(ctx: context) => ({
+    type: SchemaKindToType[zod.typeName.get(ctx.schema)],
     schema: ctx.schema,
     validate: fn.flow(ctx.schema.safeParse, x => x.success),
     path: ctx.path,
@@ -73,26 +74,13 @@ export namespace Model {
     errors: [],
     touched: false,
   })
-  // export const leaf = <T, S extends Z.any>(value: T, schema: S): Model.leaf<T, S> => ({
+  // export const leaf = <T, S extends zod.any>(value: T, schema: S): Model.leaf<T, S> => ({
   //   value,
   //   schema,
   //   errors: [] as any[],
   //   touched: false,
   // })
 }
-
-// function generateSchemaLens(path: any.keys) { return Lens.fromPath(generateSchemaPath(path)) }
-// function generateSchemaPath(path: any.keys) {
-//   let out: mut.array<string> = []
-//   for(const p of path.map(globalThis.String)) {
-//     if(p === "[]") out.push("element")
-//     else if(isBetweenBrackets(p)) out.push("items", removeBrackets(p))
-//     else out.push("shape", p)
-//   }
-//   return out
-// }
-// function isBetweenBrackets(s: string) { return s.startsWith("[") && s.endsWith("]") }
-// function removeBrackets(s: string) { return s.slice("[".length, -("]".length)) }
 
 export namespace Handlers {
   export type Any = {
@@ -113,17 +101,17 @@ export namespace Handlers {
 
   export type context = { [k in keyof Handlers.Leaf]: Identity };
   export const context = {
-    string: (ctx) => ({ ...ctx, schema: Z.typeName.softGet(ctx.schema) }),
-    number: (ctx) => ({ ...ctx, schema: Z.typeName.softGet(ctx.schema) }),
-    boolean: (ctx) => ({ ...ctx, schema: Z.typeName.softGet(ctx.schema) }),
-    null: (ctx) => ({ ...ctx, schema: Z.typeName.softGet(ctx.schema) }),
-    undefined: (ctx) => ({ ...ctx, schema: Z.typeName.softGet(ctx.schema) }),
+    string: (ctx) => ({ ...ctx, schema: zod.typeName.softGet(ctx.schema) }),
+    number: (ctx) => ({ ...ctx, schema: zod.typeName.softGet(ctx.schema) }),
+    boolean: (ctx) => ({ ...ctx, schema: zod.typeName.softGet(ctx.schema) }),
+    null: (ctx) => ({ ...ctx, schema: zod.typeName.softGet(ctx.schema) }),
+    undefined: (ctx) => ({ ...ctx, schema: zod.typeName.softGet(ctx.schema) }),
   } satisfies Handlers.Leaf;
 
   interface LensKind extends Kind<[Context.Leaf]> {
     [-1]
     : [this[0]] extends [Context.Leaf & infer context extends Context.Leaf]
-    ? [context] extends [{ path: any.keys & infer path extends any.keys, schema: infer schema extends Z.any }]
+    ? [context] extends [{ path: any.keys & infer path extends any.keys, schema: infer schema extends zod.any }]
     ? [schema] extends [{ _type: infer type extends traversable.by<path> }]
     ? Lens.fromPath<path, type>
     : Lens.fromPath<path, traversable.unfold<schema[Extract<"_type", keyof schema>], path>>
@@ -131,12 +119,19 @@ export namespace Handlers {
     : never
   }
 
-  type myschema = typeof myschema
-  const myschema = z.object({ a: z.object({ b: z.number(), c: z.string() }), d: z.boolean(), e: z.object({ f: z.string(), g: z.string() }) })
 
-  type __lenskind__ = Kind.apply$<LensKind, [{ path: ["a", "b"], schema: myschema }]>
+  export interface StoreLens<target> {
+    get(): target
+    set(a: target): void
+    [Lens.symbol]: Lens.uri
+  }
 
-  // = [H[adaptor[Z.typeName.get<T>]]] extends [infer handler]
+  export interface StoreLensKind extends Kind<[Ctx: Context.Leaf]> {
+    [-1]: this[0]["schema"] extends
+    | zod.any & infer target extends zod.any
+    ? StoreLens<target["_type"]>
+    : never
+  }
 
 
   export type lenses = { [k in keyof Handlers.Leaf]: LensKind }
@@ -147,6 +142,29 @@ export namespace Handlers {
     string: (ctx) => Lens.fromPath(...ctx.path),
     undefined: (ctx) => Lens.fromPath(...ctx.path),
   } satisfies Handlers.Leaf
+
+  function deriveLens<Z extends zod.any = never>():
+    (store: StoreApi<Z>) => (ctx: Context.Leaf<z.ZodTypeAny>) => StoreLens<Z>
+  function deriveLens<Z extends zod.any>(schema: Z):
+    (store: StoreApi<Z>) => (ctx: Context.Leaf<z.ZodTypeAny>) => StoreLens<Z>
+  function deriveLens<Z extends zod.any = never>(_?: Z):
+    (store: StoreApi<Z>) => (ctx: Context.Leaf<z.ZodTypeAny>) => StoreLens<Z> {
+    return (store) => (ctx) => {
+      const lens = Lens.fromPath<any>(...ctx.path)
+      return {
+        ...lens,
+        get: () => lens.get(store.getState()),
+        set: (a: never) => store.setState((lens.set as Lens.setter<any, any>)(a)),
+      }
+    }
+  }
+
+  export type deriveLenses<Z extends zod.any> = { [k in keyof Handlers.Leaf]: StoreLensKind }
+  export const deriveLenses =
+    <Z extends zod.any>() => (store: StoreApi<Z>) => object.map(
+      Handlers.context,
+      () => deriveLens<Z>()(store)
+    ) satisfies Handlers.Leaf
 
   export type empty = typeof Handlers.empty
   export const empty = {
@@ -193,38 +211,38 @@ export namespace Parser {
   export type TupleType = typeof TupleType
   export const TupleType = "TupleType"
 
-  export type errors<errs extends any.array<Z.issue>>
+  export type errors<errs extends any.array<zod.issue>>
     = Tree.fromPaths<{ [ix in keyof errs]: [...errs[ix]['path'], errs[ix]] }>
 
-  export function errors<const errs extends any.array<Z.issue>>(errs: errs): Parser.errors<errs>;
-  export function errors<const errs extends any.array<Z.issue>>(errs: errs) {
+  export function errors<const errs extends any.array<zod.issue>>(errs: errs): Parser.errors<errs>;
+  export function errors<const errs extends any.array<zod.issue>>(errs: errs) {
     return Tree.fromPaths(...errs.map((e) => [...e.path, e] as const))
   }
 
-  export type leaf<T extends Z.any.leaf, H extends Handlers.Any, Ctx>
-    = [H[adaptor[Z.typeName.get<T>]]] extends [infer handler]
+  export type leaf<T extends zod.any.leaf, H extends Handlers.Any, Ctx>
+    = [H[adaptor[zod.typeName.get<T>]]] extends [infer handler]
     ? [handler] extends [Kind<1>] ? Kind.apply$<handler, [Ctx]>
     : [handler] extends [any.function] ? ReturnType<handler>
     : handler
     : Ctx
     ;
-  export function leaf<H extends Handlers.Leaf, S extends Z.any.leaf>
+  export function leaf<H extends Handlers.Leaf, S extends zod.any.leaf>
     (handlers: Partial<H>, ctx: Context.Leaf, s: S) {
-    if (Z.leaf.string.is(s))
+    if (zod.leaf.string.is(s))
       return (handlers.string ?? Handlers.defaults.string)(Context.next(SchemaKind.Leaf, ctx, s))
-    else if (Z.leaf.number.is(s))
+    else if (zod.leaf.number.is(s))
       return (handlers.number ?? Handlers.defaults.number)(Context.next(SchemaKind.Leaf, ctx, s))
-    else if (Z.leaf.boolean.is(s))
+    else if (zod.leaf.boolean.is(s))
       return (handlers.boolean ?? Handlers.defaults.boolean)(Context.next(SchemaKind.Leaf, ctx, s))
-    else if (Z.leaf.null.is(s))
+    else if (zod.leaf.null.is(s))
       return (handlers.null ?? Handlers.defaults.null)(Context.next(SchemaKind.Leaf, ctx, s));
-    else if (Z.leaf.undefined.is(s))
+    else if (zod.leaf.undefined.is(s))
       return (handlers.undefined ?? Handlers.defaults.undefined)(Context.next(SchemaKind.Leaf, ctx, s))
     else return fn.exhaustive(s)
   }
 
-  export type parse<S extends Z.any, H extends Handlers.Any, Ctx extends Context.Leaf = Context.empty<S>>
-    = [S] extends [Z.any.leaf] ? Parser.leaf<S, H, Ctx>
+  export type parse<S extends zod.any, H extends Handlers.Any, Ctx extends Context.Leaf = Context.empty<S>>
+    = [S] extends [zod.any.leaf] ? Parser.leaf<S, H, Ctx>
     : [S] extends [z.ZodArray<infer elements>] ? (
       & { [SchemaType]: ArrayType } // , [-1]: (create: z.infer<elements>) => z.infer<elements> }
       & {
@@ -243,28 +261,27 @@ export namespace Parser {
 
   export function parse
     <H extends Handlers.Kinds = never>(handlers: Partial<Handlers.Leaf>):
-    <S extends Z.any>(s: S) => Parser.parse<S, H, Context.empty<S>>
+    <S extends zod.any>(s: S) => Parser.parse<S, H, Context.empty<S>>
   export function parse
     <H extends Handlers.Fns = never>(handlers: Partial<H>):
-    <S extends Z.any>(s: S) => Parser.parse<S, H, Context.empty<S>>
-
+    <S extends zod.any>(s: S) => Parser.parse<S, H, Context.empty<S>>
   /** impl. */
   export function parse(handlers: Partial<Handlers.Leaf>) {
     const go =
       (ctx: Context.Leaf) =>
-        (s: Z.any): unknown => {
-          if (Z.array.is(s))
-            return { ["[]"]: go(Context.next(SchemaKind.Array, ctx, Z.array.get(s), "[]"))(Z.array.get(s)) }
-          else if (Z.tuple.is(s))
-            return Z.tuple.get(s).map((v, ix) => go(Context.next(SchemaKind.Tuple, ctx, s, ix))(v))
-          else if (Z.object.is(s))
-            return object.map(Z.object.get(s), (v, k) => go(Context.next(SchemaKind.Object, ctx, s, k))(v))
-          else if (Z.leaf.is(s))
+        (s: zod.any): unknown => {
+          if (zod.array.is(s))
+            return { ["[]"]: go(Context.next(SchemaKind.Array, ctx, zod.array.get(s), "[]"))(zod.array.get(s)) }
+          else if (zod.tuple.is(s))
+            return zod.tuple.get(s).map((v, ix) => go(Context.next(SchemaKind.Tuple, ctx, s, ix))(v))
+          else if (zod.object.is(s))
+            return object.map(zod.object.get(s), (v, k) => go(Context.next(SchemaKind.Object, ctx, s, k))(v))
+          else if (zod.leaf.is(s))
             return Parser.leaf(handlers, ctx, s);
           else // TODO: remove type assertion:
             return fn.exhaustive(s as never)
         }
-    return (s: Z.any) => go(Context.empty(s))(s);
+    return (s: zod.any) => go(Context.empty(s))(s);
   }
 
   export type concat<prev extends any.index, next extends any.index, delimiter extends any.showable = ".">
@@ -273,44 +290,39 @@ export namespace Parser {
   export const concat = (prev: any.key, next: any.key, delimiter: any.showable = ".") =>
     `${prev}${`${prev}` === "" ? "" : `${next}`.startsWith("[") ? "" : delimiter}${next}`
 
-  /** TODO: get this working when working on arrays */
+  /** TODO: Will need this when you switch to supporting arrays */
   // export type correctLens<tree> = never | (
-  //   tree extends Lens.fromPath<infer path, infer schema> // infer schema extends traversable.by<path>>
-  //   ? Lens.fromPath<{ [ix in keyof path]: number extends path[ix] ? "[]" : path[ix] }, schema>
+  //   tree extends Lens.fromPath<infer P, infer S>
+  //   ? { [ix in keyof P]: number extends P[ix] ? "[]" : P[ix] } extends
+  //   | infer Q extends { [ix in keyof P]: number extends P[ix] ? "[]" : P[ix] }
+  //   ? Lens.fromPath<Q, traversable.by<Q>>
   //   : tree
+  //   : never
   // )
 
-  type cleanUp<type>
-    = [type] extends [any.primitive] ? type
-    : [type] extends [any.indexedBy<Parser.SchemaType>]
-    ? { [k in Exclude<keyof type, Parser.SchemaType>]: cleanUp<type[k]> }
-    : never
-    ;
-
-  export type flatten<tree, prev extends any.key = "">
-    = [tree] extends [Lens.any] ? [key: prev, lens: tree] // correctLens<tree>]   /** TODO: turn this back on when `correctLens` is fixed */
+  export type flatten<tree, basecase, prev extends any.key = "">
+    = [tree] extends [basecase] ? [key: prev, lens: tree]
     : [keyof tree] extends [any.keyof<tree, infer next>]
     ? next extends next
-    /** TODO: get Arrays working again */
+    /** TODO: turn on after adding support for tuples and arrays */
     // ? tree extends (
-    //   & { [Parser.SchemaType]: Parser.ArrayType } 
+    //   & { [Parser.SchemaType]: Parser.ArrayType }
     //   & infer type extends any.indexedBy<next>
     // ) ? flatten<type[Extract<number, keyof type>], Parser.concat<prev, `[]`, ``>>
-    /** TODO: get Tuples working again */
     // : tree extends (
-    //   & { [Parser.SchemaType]: Parser.TupleType } 
+    //   & { [Parser.SchemaType]: Parser.TupleType }
     //   & infer type extends any.indexedBy<next>
     // ) ? flatten<type[next], Parser.concat<prev, `[${number extends next ? never : next & any.key}]`, ``>>
     ? tree extends (
       & { [Parser.SchemaType]: Parser.ObjectType }
       & infer type extends any.indexedBy<next>
-    ) ? flatten<type[next], Parser.concat<prev, next>>
-    : { [k in keyof tree]: flatten<tree[k], prev> }
+    ) ? flatten<type[next], basecase, Parser.concat<prev, next>>
+    : tree
     : never
     : never
     ;
 
-  export function flatten(object: unknown) {
+  export function flatten(object: unknown): Record<string, any> {
     let entries: mut.entries = []
     const go = (path: any.key) => (x: unknown) => {
       if (Lens.is(x)) entries.push([path, x])
@@ -322,53 +334,121 @@ export namespace Parser {
     return globalThis.Object.fromEntries(entries)
   }
 
-  export type lenses_<S extends Z.any> = Parser.parse<S, Handlers.lenses>
-  export const lenses_ = Parser.parse<Handlers.lenses>(Handlers.lenses)
-  export type flatLens<tree>
-    = flatten<tree> extends any.entry<infer entry>
-    ? { [e in entry as e[0]]: e[1] } : never
-  export const flatLens
-    : <S extends Z.any>(schema: S) => Parser.lenses<S>
-    = fn.flow(Parser.lenses_, flatten) as never
-
-  export type lenses<S extends Z.any> = flatLens<Parser.lenses_<S>>
-  export const lenses = Parser.flatLens
-  export type leaves<S extends Z.any> = Parser.parse<S, Handlers.leaves>
+  export type leaves<S extends zod.any> = Parser.parse<S, Handlers.leaves>
   export const leaves = Parser.parse(Handlers.leaves)
-  export type empty<S extends Z.any> = Parser.parse<S, Handlers.empty>
-  export const empty = Parser.parse<Handlers.empty>(Handlers.empty)
-  export type deriveEmpty<S extends Z.any> = cleanUp<Parser.empty<S>>
-  export type context<S extends Z.any> = Parser.parse<S, Handlers.context>
+
+  export type context<S extends zod.any> = Parser.parse<S, Handlers.context>
   export const context = Parser.parse<Handlers.context>(Handlers.context)
-  export type touched<S extends Z.any> = Parser.parse<S, Handlers.touched>
+  export type touched<S extends zod.any> = Parser.parse<S, Handlers.touched>
   export const touched = Parser.parse<Handlers.touched>(Handlers.touched)
+
+  export type deriveEmpty<S extends zod.any> = internal.cleanUp<Parser.parse<S, Handlers.empty>>
+  export const deriveEmpty = Parser.parse<Handlers.empty>(Handlers.empty)
+
+  export type deriveLenses<Z extends zod.any> = never | { [e in internal.deriveLenses<Z> as e[0]]: e[1] }
+  export const deriveLenses = <Z extends zod.any>(schema: Z) =>
+    (store: UseBoundStore<StoreApi<Z>>): Parser.deriveLenses<Z> => {
+      const lenses = flatten(internal.deriveLenses(schema))
+      return object.map(
+        lenses,
+        (l: Lens.fromPath<any, any>) => ({
+          ...l,
+          get: () => store(l.get),
+          set: (a: any) => store.setState((l.set as Lens.setter<any, any>)(a))
+        })
+      ) as never
+    }
 }
 
+declare namespace internal {
+  type deriveLenses<Z extends zod.any>
+    = Extract<Parser.flatten<
+      Parser.parse<Z, Handlers.deriveLenses<Z>>,
+      Handlers.StoreLens<any>
+    >, any.entry>
+  type deriveEmpty<S extends zod.any> = cleanUp<Parser.deriveEmpty<S>>
 
-const dateStruct = z.object({
-  mm: z.number(),
-  dd: z.number(),
-  yyyy: z.number(),
-})
+  type cleanUp<type>
+    = [type] extends [any.primitive] ? type
+    : [type] extends [any.indexedBy<Parser.SchemaType>]
+    ? { [k in Exclude<keyof type, Parser.SchemaType>]: cleanUp<type[k]> }
+    : never
+    ;
+}
+namespace internal {
+  export const deriveLenses = Parser.parse<Handlers.lenses>(Handlers.lenses)
+}
 
-
+// = [tree] extends [Lens.any] ? [key: prev, lens: correctLens<tree>]
+// : [keyof tree] extends [any.propertyOf<tree, infer next>]
+// ? next extends next
+// ? tree extends (
+//   & { [Parser.SchemaType]: Parser.ArrayType }
+//   & infer type extends any.indexedBy<next>
+// ) ? flatten<type[Extract<number, keyof type>], Parser.concat<prev, `[]`, ``>>
+// : tree extends (
+//   & { [Parser.SchemaType]: Parser.TupleType }
+//   & infer type extends any.indexedBy<next>
+// ) ? flatten<type[next], Parser.concat<prev, `[${number extends next ? never : next & any.key}]`, ``>>
+// : tree extends (
+//   & { [Parser.SchemaType]: Parser.ObjectType }
+//   & infer type extends any.indexedBy<next>
+// ) ? flatten<type[next], Parser.concat<prev, next>>
+// : 1
+// // never.close.distributive<"next">
+// : 2 // never.close.inline_var<"next">
+// : 3 // never.close.unmatched_expr
+// ;
+// export type lenses_<S extends zod.any> = Parser.parse<S, Handlers.lenses>
+// export const lenses_ = Parser.parse<Handlers.lenses>(Handlers.lenses)
+// // export type flatLens<tree>
+// //   = flatten<tree> extends any.entry<infer entry>
+//   ? { [e in entry as e[0]]: e[1] } : never
+// export const flatLens
+//   : <S extends zod.any>(schema: S) => Parser.lenses<S>
+//   = fn.flow(Parser.lenses_, flatten) as never
+// export type lenses<S extends zod.any> = { [e in flatten<Parser.lenses_<S>, Lens.any>> as e[0]]: }
+// export const lenses = Parser.flatLens
 // export type flatten<tree, prev extends any.key = "">
-//   = [tree] extends [Lens.any] ? [key: prev, lens: correctLens<tree>]
+//   = [tree] extends [Lens.any] ? [key: prev, lens: tree] // correctLens<tree>]   /** TODO: turn this back on when `correctLens` is fixed */
 //   : [keyof tree] extends [any.propertyOf<tree, infer next>]
-//   ? next extends next
-//   ? tree extends (
-//     & { [Parser.SchemaType]: Parser.ArrayType }
-//     & infer type extends any.indexedBy<next>
-//   ) ? flatten<type[Extract<number, keyof type>], Parser.concat<prev, `[]`, ``>>
-//   : tree extends (
-//     & { [Parser.SchemaType]: Parser.TupleType }
-//     & infer type extends any.indexedBy<next>
-//   ) ? flatten<type[next], Parser.concat<prev, `[${number extends next ? never : next & any.key}]`, ``>>
-//   : tree extends (
-//     & { [Parser.SchemaType]: Parser.ObjectType }
-//     & infer type extends any.indexedBy<next>
-//   ) ? flatten<type[next], Parser.concat<prev, next>>
-//   : never.close.distributive<"next">
-//   : never.close.inline_var<"next">
-//   : never.close.unmatched_expr
-//   ;
+//   // next extends next
+//   ? next
+//   : never
+/** TODO: get Arrays working again */
+// ? tree extends (
+//   & { [Parser.SchemaType]: Parser.ArrayType }
+//   & infer type extends any.indexedBy<next>
+// ) ? flatten<type[Extract<number, keyof type>], Parser.concat<prev, `[]`, ``>>
+/** TODO: get Tuples working again */
+// : tree extends (
+//   & { [Parser.SchemaType]: Parser.TupleType }
+//   & infer type extends any.indexedBy<next>
+// ) ? flatten<type[next], Parser.concat<prev, `[${number extends next ? never : next & any.key}]`, ``>>
+// ? tree extends (
+//   & { [Parser.SchemaType]: Parser.ObjectType }
+//   & infer type extends any.indexedBy<next>
+// ) ? flatten<type[next], Parser.concat<prev, next>>
+// : { [k in keyof tree]: flatten<tree[k], prev> }
+// : never
+// : never
+// ;
+// {
+//   boolean: (ctx: Context.Leaf<z.ZodTypeAny>) => StoreLens<Z>;
+//   null: (ctx: Context.Leaf<z.ZodTypeAny>) => StoreLens<Z>;
+//   number: (ctx: Context.Leaf<z.ZodTypeAny>) => StoreLens<Z>;
+//   string: (ctx: Context.Leaf<z.ZodTypeAny>) => StoreLens<Z>;
+//   undefined: (ctx: Context.Leaf<z.ZodTypeAny>) => StoreLens<Z>;
+// }
+// function generateSchemaLens(path: any.keys) { return Lens.fromPath(generateSchemaPath(path)) }
+// function generateSchemaPath(path: any.keys) {
+//   let out: mut.array<string> = []
+//   for(const p of path.map(globalThis.String)) {
+//     if(p === "[]") out.push("element")
+//     else if(isBetweenBrackets(p)) out.push("items", removeBrackets(p))
+//     else out.push("shape", p)
+//   }
+//   return out
+// }
+// function isBetweenBrackets(s: string) { return s.startsWith("[") && s.endsWith("]") }
+// function removeBrackets(s: string) { return s.slice("[".length, -("]".length)) }

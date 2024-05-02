@@ -1,33 +1,29 @@
-import type { StoreApi } from "zustand"
+import type * as zustand from "zustand"
 
 import { Parser } from "./parser"
 import * as Lens from "./lens"
 import * as object from "./object"
-import { z as Z } from "./schema"
+import { z } from "./schema"
 
 export declare namespace Middleware {
-  type withLenses<store, schema extends Z.any> = never | (
+  type SetState<Z extends z.any> = StoreApi<Z>["setState"]
+  type GetState<Z extends z.any> = StoreApi<Z>["getState"]
+  type StoreApi<Z extends z.any> = Middleware.deriveLenses<zustand.StoreApi<Z["_type"]>, Z>
+
+  type deriveLenses<store, Z extends z.any> = never | (
     & store
-    & { use: Parser.lenses<schema> }
+    & { use: Parser.deriveLenses<Z> }
   )
 }
 
 export namespace Middleware {
-  export function withLenses<schema extends Z.any>(schema: schema):
-    <store>(store: store) => Middleware.withLenses<store, schema>
+  export function deriveLenses<schema extends z.any>(schema: schema):
+    <store>(store: store) => Middleware.deriveLenses<store, schema>
 
-  export function withLenses<schema extends Z.any>(schema: schema) {
-    return <store extends StoreApi<schema["_type"]>>(store: store) => {
-      let next = store as store & { use: unknown }
-      const lenses = Parser.lenses(schema)
-      next.use = object.map(
-        lenses as never,
-        (l: Lens.fromPath<any, any>) => ({
-          ...l,
-          get: () => l.get(store.getState()),
-          set: (a: any) => store.setState((l.set as Lens.setter<any, any>)(a))
-        })
-      )
+  export function deriveLenses<Z extends z.any>(schema: Z) {
+    return <store extends zustand.UseBoundStore<StoreApi<Z>>>(store: store) => {
+      let next = { ...store } as store & { use: any }
+      next.use = Parser.deriveLenses<Z>(schema)(store)
       return next
     }
   }

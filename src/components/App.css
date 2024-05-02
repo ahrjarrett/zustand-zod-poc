@@ -46,3 +46,11 @@
 
 }
 
+label {
+  text-align: right;
+  color: #bbb;
+}
+
+p {
+  margin-bottom: 0;
+}

@@ -18,6 +18,7 @@ module.exports = {
     "@typescript-eslint/no-explicit-any": "off",
     "@typescript-eslint/ban-types": "off",
     "@typescript-eslint/no-unused-vars": "off",
+    "no-inner-declarations": "off",
     "prefer-const": "off",
     "prefer-rest-params": "off",
   },
