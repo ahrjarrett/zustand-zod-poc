@@ -169,11 +169,11 @@ export namespace Handlers {
 
   export type empty = typeof Handlers.empty
   export const empty = {
-    boolean: (ctx) => { console.log("BOOLEAN EMPTY", ctx.shadow ?? "NO"); return (ctx.shadow ?? false) as boolean },
-    number: (ctx) => { console.log("NUMBER EMPTY", ctx.shadow ?? "NO"); return (ctx.shadow ?? 0) as number },
-    string: (ctx) => { console.log("STRING EMPTY", ctx.shadow ?? "NO"); return (ctx.shadow ?? "") as string },
-    null: (ctx) => { console.log("NULL EMPTY", ctx.shadow ?? "NO"); return (ctx.shadow ?? null) as null },
-    undefined: (ctx) => { console.log("UNDEFINED EMPTY", ctx.shadow ?? "NO"); return (ctx.shadow ?? undefined) as undefined },
+    boolean: (ctx): boolean => ctx.shadow ?? false,
+    number: (ctx): number => ctx.shadow ?? 0,
+    string: (ctx): string => ctx.shadow ?? "",
+    null: (ctx): null => ctx.shadow ?? null,
+    undefined: (ctx): undefined => ctx.shadow ?? undefined,
   } satisfies Handlers.Leaf
 
 
