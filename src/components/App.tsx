@@ -55,7 +55,7 @@ export const Address = z.object({
 })
 
 type Store = typeof Store
-const Store = create(User)
+const Store = create(User, { name: { first: "Bill", last: "Murray" } })
   ; (window as any).Store = Store
 
 export function App() {

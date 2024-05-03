@@ -32,8 +32,9 @@ export const is
 export type Has<P extends any.keys, A = any> = traversable.unfold<Widen<A>, P>
 export function Has<const K extends any.index>(key: K): <O>(o: O) => o is O & Record<K, unknown>
 export function Has<const K extends any.index>(key: K) {
-  return (object: {}): object is Record<K, unknown> => key in object
+  return (object: {}): object is Record<K, unknown> => isObject(object) && key in object
 }
+
 
 export type get<S, P extends any.keys> = traversal.of<S, P>
 export type getter<P extends any.keys, S extends traversable.by<P> = traversable.by<P>> = <const T extends S>(object: T) => get<T, P>
