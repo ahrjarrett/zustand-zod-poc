@@ -20,11 +20,13 @@ const SchemaKind = {
   Tuple: "Tuple",
   Object: "Object",
   Leaf: "Leaf",
+  Exotic: "Exotic",
 } as const
 const SchemaKindToProp = {
   Array: "element",
   Tuple: "items",
   Object: "shape",
+  Schema: "schema",
   Leaf: null,
 } as const
 
@@ -48,7 +50,7 @@ export namespace Context {
     ({ schema, path: [] })
   export interface Leaf<S extends zod.any = zod.any> { schema: S, path: any.keys, shadow?: any }
   export type next<_kind extends SchemaKind, prev extends Context.Leaf, schema, ix extends any.key> = never |
-  { schema: schema; path: [...prev['path'], ix] }
+  { schema: schema; path: [ix] extends [never] ? prev["path"] : [...prev["path"], ix] }
   export const next = (kind: SchemaKind, prev: Context.Leaf, schema: any.type, segment?: any.key, shadow?: any): Context.Leaf =>
   ({
     schema: kind === SchemaKind.Leaf ? schema : (schema as any)[SchemaKindToProp[kind]],
@@ -167,13 +169,21 @@ export namespace Handlers {
       () => deriveLens<Z>()(store)
     ) satisfies Handlers.Leaf
 
+  const fallback = {
+    boolean: false,
+    number: 0,
+    string: "",
+    null: null,
+    undefined: undefined,
+  } satisfies Record<keyof Handlers.Leaf, any.primitive>
+
   export type empty = typeof Handlers.empty
   export const empty = {
-    boolean: (ctx): boolean => ctx.shadow ?? false,
-    number: (ctx): number => ctx.shadow ?? 0,
-    string: (ctx): string => ctx.shadow ?? "",
-    null: (ctx): null => ctx.shadow ?? null,
-    undefined: (ctx): undefined => ctx.shadow ?? undefined,
+    boolean: (ctx): boolean => ctx.shadow ?? fallback.boolean,
+    number: (ctx): number => ctx.shadow ?? fallback.number,
+    string: (ctx): string => ctx.shadow ?? fallback.string,
+    null: (ctx): null => ctx.shadow ?? fallback.null,
+    undefined: (ctx): undefined => ctx.shadow ?? fallback.undefined,
   } satisfies Handlers.Leaf
 
 
@@ -213,7 +223,7 @@ export namespace Parser {
   export const TupleType = "TupleType"
 
   export type errors<errs extends any.array<zod.issue>>
-    = Tree.fromPaths<{ [ix in keyof errs]: [...errs[ix]['path'], errs[ix]] }>
+    = Tree.fromPaths<{ [ix in keyof errs]: [...errs[ix]["path"], errs[ix]] }>
 
   export function errors<const errs extends any.array<zod.issue>>(errs: errs): Parser.errors<errs>;
   export function errors<const errs extends any.array<zod.issue>>(errs: errs) {
@@ -243,8 +253,11 @@ export namespace Parser {
     else return fn.exhaustive(s)
   }
 
+  const nextShadow = (prop: any.key, shadow: any) => isObject(shadow) && prop in shadow ? shadow[prop] : void 0
+
   export type parse<S extends zod.any, H extends Handlers.Any, Ctx extends Context.Leaf = Context.empty<S>>
     = [S] extends [zod.any.leaf] ? Parser.leaf<S, H, Ctx>
+    : [S] extends [z.ZodEffects<infer schema>] ? Parser.parse<schema, H, Context.next<typeof SchemaKind.Exotic, Ctx, schema, never>>
     : [S] extends [z.ZodArray<infer elements>] ? (
       & { [SchemaType]: ArrayType } // , [-1]: (create: z.infer<elements>) => z.infer<elements> }
       & {
@@ -261,8 +274,6 @@ export namespace Parser {
         Parser.parse<shape[k], H, Context.next<typeof SchemaKind.Object, Ctx, shape[k], k & any.key>> }
     ) : never
 
-  const nextShadow = (prop: any.key, shadow: any) => isObject(shadow) && prop in shadow ? shadow[prop] : void 0
-
   export function parse
     <H extends Handlers.Kinds = never>(handlers: Partial<Handlers.Leaf>, shadow?: any):
     <S extends zod.any>(s: S) => Parser.parse<S, H, Context.empty<S>>
@@ -273,20 +284,22 @@ export namespace Parser {
   export function parse(handlers: Partial<Handlers.Leaf>, shadow?: any) {
     const go =
       (ctx: Context.Leaf, shadow?: any) =>
-        (s: zod.any): unknown => {
-          if (zod.array.is(s))
+        (_: zod.any): unknown => {
+          if (zod.array.is(_))
             /** TODO: Figure out how you want to  turn on "shadow" for array schemas */
-            return { ["[]"]: go(Context.next(SchemaKind.Array, ctx, zod.array.get(s), "[]", void 0), void 0)(zod.array.get(s)) }
-          else if (zod.tuple.is(s))
-            return zod.tuple.get(s).map((v, ix) => go(Context.next(SchemaKind.Tuple, ctx, s, ix, nextShadow(ix, shadow)), nextShadow(ix, shadow))(v))
-          else if (zod.object.is(s))
-            return object.map(zod.object.get(s), (v, k) => go(Context.next(SchemaKind.Object, ctx, s, k, nextShadow(k, shadow)), nextShadow(k, shadow))(v))
-          else if (zod.leaf.is(s))
-            return Parser.leaf(handlers, ctx, s)
+            return { ["[]"]: go(Context.next(SchemaKind.Array, ctx, zod.array.get(_), "[]", void 0), void 0)(zod.array.get(_)) }
+          else if (zod.tuple.is(_))
+            return zod.tuple.get(_).map((v, ix) => go(Context.next(SchemaKind.Tuple, ctx, _, ix, nextShadow(ix, shadow)), nextShadow(ix, shadow))(v))
+          else if (zod.object.is(_))
+            return object.map(zod.object.get(_), (v, k) => go(Context.next(SchemaKind.Object, ctx, _, k, nextShadow(k, shadow)), nextShadow(k, shadow))(v))
+          else if (zod.leaf.is(_))
+            return Parser.leaf(handlers, ctx, _)
+          else if (zod.exotic.effect.is(_))
+            return go(Context.next(SchemaKind.Exotic, ctx, _, void 0, shadow))
           else // TODO: remove type assertion:
-            return fn.exhaustive(s as never)
+            return fn.exhaustive(_ as never)
         }
-    return (s: zod.any) => go(Context.empty(s), shadow)(s)
+    return (_: zod.any) => go(Context.empty(_), shadow)(_)
   }
 
   export type concat<prev extends any.index, next extends any.index, delimiter extends any.showable = ".">
@@ -509,7 +522,7 @@ namespace internal {
 //     ({ schema, path: [] })
 //   export interface Leaf<S extends zod.any = zod.any> { schema: S, path: any.keys }
 //   export type next<_kind extends SchemaKind, prev extends Context.Leaf, schema, ix extends any.key> = never |
-//   { schema: schema; path: [...prev['path'], ix] }
+//   { schema: schema; path: [...prev["path"], ix] }
 //   export const next = (kind: SchemaKind, prev: Context.Leaf, schema: any.type, segment?: any.key): Context.Leaf =>
 //   ({
 //     schema: kind === SchemaKind.Leaf ? schema : (schema as any)[SchemaKindToProp[kind]],
@@ -632,7 +645,7 @@ namespace internal {
 //   export const empty = {
 //     boolean: () => false,
 //     number: () => 0,
-//     string: () => '',
+//     string: () => "",
 //     null: () => null,
 //     undefined: () => undefined,
 //   } satisfies Handlers.Leaf
@@ -674,7 +687,7 @@ namespace internal {
 //   export const TupleType = "TupleType"
 
 //   export type errors<errs extends any.array<zod.issue>>
-//     = Tree.fromPaths<{ [ix in keyof errs]: [...errs[ix]['path'], errs[ix]] }>
+//     = Tree.fromPaths<{ [ix in keyof errs]: [...errs[ix]["path"], errs[ix]] }>
 
 //   export function errors<const errs extends any.array<zod.issue>>(errs: errs): Parser.errors<errs>;
 //   export function errors<const errs extends any.array<zod.issue>>(errs: errs) {

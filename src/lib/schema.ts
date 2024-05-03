@@ -3,11 +3,13 @@ import type { any, nonempty, TypeError, to } from "any-ts"
 import type { evaluate, parseInt } from "./types"
 import * as object from "./object"
 
+const TAG = z.ZodFirstPartyTypeKind
+
 /** @internal */
 const leafTypeNames = [
-  z.ZodFirstPartyTypeKind.ZodString,
-  z.ZodFirstPartyTypeKind.ZodNumber,
-  z.ZodFirstPartyTypeKind.ZodBoolean,
+  TAG.ZodString,
+  TAG.ZodNumber,
+  TAG.ZodBoolean,
 ] as const;
 /** @internal */
 const ZodIssue = z.object({
@@ -102,20 +104,20 @@ declare namespace Z {
     export type shape<type extends z.ZodRawShape = z.ZodRawShape> = type;
   }
   namespace Infer {
-    type go<type extends Z.any.schema> = type extends z.ZodObject<
+    type go<type extends Z.any> = type extends z.ZodObject<
       Z.any.shape<infer shape>
     >
       ? { [ix in keyof shape]: Z.infer.go<shape[ix]> }
       : type extends z.ZodTuple<Z.any.items<infer items>>
       ? { [ix in keyof items]: Z.infer.go<items[ix]> }
-      : type extends z.ZodArray<Z.any.schema<infer schema>>
+      : type extends z.ZodArray<Z.any<infer schema>>
       ? any.array<Z.infer.go<schema>>
       : type extends Z.any.leaf<infer leaf>
       ? Z.infer.leaf<leaf>
       : TypeError<['Unsupported schema', type]>;
     export type leaf<type extends Z.any.leaf> = z.infer<type>;
     export type elements<type extends z.ZodArray<any>> =
-      type extends z.ZodArray<Z.any.schema<infer schema>> ? schema : never;
+      type extends z.ZodArray<Z.any<infer schema>> ? schema : never;
     export type items<type extends z.ZodTuple<any>> = type extends z.ZodTuple<
       Z.any.items<infer items>
     >
@@ -150,22 +152,29 @@ const Z = {
   error: { schema: ZodError, is: guard.fromSchema(ZodError) },
   leaf: {
     is: (u: object): u is Z.any.leaf => hasTypeName(u, ...leafTypeNames),
-    boolean: { is: (u: object): u is z.ZodBoolean => hasTypeName(u, z.ZodFirstPartyTypeKind.ZodBoolean) },
-    number: { is: (u: object): u is z.ZodNumber => hasTypeName(u, z.ZodFirstPartyTypeKind.ZodNumber) },
-    string: { is: (u: object): u is z.ZodString => hasTypeName(u, z.ZodFirstPartyTypeKind.ZodString) },
-    null: { is: (u: object): u is z.ZodNull => hasTypeName(u, z.ZodFirstPartyTypeKind.ZodNull) },
-    undefined: { is: (u: object): u is z.ZodUndefined => hasTypeName(u, z.ZodFirstPartyTypeKind.ZodUndefined) },
+    boolean: { is: (u: object): u is z.ZodBoolean => hasTypeName(u, TAG.ZodBoolean) },
+    number: { is: (u: object): u is z.ZodNumber => hasTypeName(u, TAG.ZodNumber) },
+    string: { is: (u: object): u is z.ZodString => hasTypeName(u, TAG.ZodString) },
+    null: { is: (u: object): u is z.ZodNull => hasTypeName(u, TAG.ZodNull) },
+    undefined: { is: (u: object): u is z.ZodUndefined => hasTypeName(u, TAG.ZodUndefined) },
   },
   array: {
-    get: <T extends Z.any.schema>(a: z.ZodArray<T>): T => a._def.type,
-    is: <T extends Z.any.schema>(u: unknown): u is z.ZodArray<T> => hasTypeName(u, z.ZodFirstPartyTypeKind.ZodArray),
+    get: <T extends Z.any>(a: z.ZodArray<T>): T => a._def.type,
+    is: <T extends Z.any>(u: unknown): u is z.ZodArray<T> => hasTypeName(u, TAG.ZodArray),
   },
   tuple: {
     get: <T extends Z.any.items>(t: z.ZodTuple<T>): T => t._def.items,
-    is: <T extends Z.any.items>(u: unknown): u is z.ZodTuple<T> => hasTypeName(u, z.ZodFirstPartyTypeKind.ZodTuple),
+    is: <T extends Z.any.items>(u: unknown): u is z.ZodTuple<T> => hasTypeName(u, TAG.ZodTuple),
   },
   object: {
     get: <T extends Z.any.shape>(o: z.ZodObject<T>): T => o.shape,
-    is: <T extends Z.any.shape>(u: unknown): u is z.ZodObject<T> => hasTypeName(u, z.ZodFirstPartyTypeKind.ZodObject),
+    is: <T extends Z.any.shape>(u: unknown): u is z.ZodObject<T> => hasTypeName(u, TAG.ZodObject),
+  },
+  exotic: {
+    effect: {
+      get: <T extends Z.any>(eff: z.ZodEffects<T>): T => eff._def.schema,
+      is: <T extends Z.any>(u: unknown): u is z.ZodEffects<T> => hasTypeName(u, TAG.ZodEffects),
+    }
+
   },
 } as const;
