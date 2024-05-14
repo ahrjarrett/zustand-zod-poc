@@ -1,4 +1,4 @@
-import './App.css'
+import "./App.css"
 import * as R from "react"
 import * as z from "zod"
 
@@ -40,6 +40,7 @@ const User = z.object({
     mm: z.number(),
     dd: z.number(),
     yyyy: z.number(),
+    nested: z.object({ xyz: z.string() }),
   }),
   /** TODO: get arrays working */
   // trips: z.array(Address),
@@ -55,7 +56,7 @@ export const Address = z.object({
 })
 
 type Store = typeof Store
-const Store = create(User, { name: { first: "Bill", last: "Murray" } })
+const Store = create(User)
   ; (window as any).Store = Store
 
 export function App() {
