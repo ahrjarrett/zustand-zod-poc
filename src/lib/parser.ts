@@ -9,10 +9,34 @@ import * as Lens from "./lens"
 import type { StoreApi, UseBoundStore } from "zustand"
 import { Partial } from "./types"
 
+type TypeName = typeof TypeName[keyof typeof TypeName]
+const TypeName = {
+  string: "string",
+  number: "number",
+  boolean: "boolean",
+  null: "null",
+  undefined: "undefined",
+  symbol: "symbol",
+  bigint: "bigint",
+  array: "array",
+  object: "object",
+  tuple: "tuple",
+} as const
+
+const NonNullablePrimitives = [
+  TypeName.string, 
+  TypeName.number, 
+  TypeName.boolean, 
+  TypeName.symbol, 
+  TypeName.bigint,
+] as const
+
+const includes = (xs: any.array) => (query: any.primitive) => xs.includes(query)
+
 const isObject = (u: unknown): u is Record<string, any> =>
   typeof u === "object" && u !== null && !Array.isArray(u)
 const isPrimitive = (u: unknown): u is any.primitive =>
-  ["string", "number", "boolean", "symbol", "bigint"].includes(typeof u) || u == null
+  u == null || includes(NonNullablePrimitives)(typeof u)
 
 type SchemaKind = typeof SchemaKind[keyof typeof SchemaKind]
 const SchemaKind = {
@@ -23,24 +47,30 @@ const SchemaKind = {
   Exotic: "Exotic",
 } as const
 const SchemaKindToProp = {
-  Array: "element",
-  Tuple: "items",
-  Object: "shape",
-  Schema: "schema",
-  Leaf: null,
-} as const
+  [SchemaKind.Array]: "element",
+  [SchemaKind.Tuple]: "items",
+  [SchemaKind.Object]: "shape",
+  [SchemaKind.Leaf]: "schema",
+  [SchemaKind.Exotic]: "null",
+} as const satisfies Record<SchemaKind, any>
 
+const TAG = z.ZodFirstPartyTypeKind
+
+// use a Zod schema tag to look up a string describing the type
 export const SchemaKindToType = {
-  [z.ZodFirstPartyTypeKind.ZodString]: "string",
-  [z.ZodFirstPartyTypeKind.ZodNumber]: "number",
-  [z.ZodFirstPartyTypeKind.ZodBoolean]: "boolean",
-  [z.ZodFirstPartyTypeKind.ZodNull]: "null",
-  [z.ZodFirstPartyTypeKind.ZodUndefined]: "undefined",
-  [z.ZodFirstPartyTypeKind.ZodArray]: "array",
-  [z.ZodFirstPartyTypeKind.ZodObject]: "object",
-  [z.ZodFirstPartyTypeKind.ZodTuple]: "tuple",
+  [TAG.ZodString]: TypeName.string,
+  [TAG.ZodNumber]: TypeName.number,
+  [TAG.ZodBoolean]: TypeName.boolean,
+  [TAG.ZodNull]: TypeName.null,
+  [TAG.ZodUndefined]: TypeName.undefined,
+  [TAG.ZodArray]: TypeName.array,
+  [TAG.ZodObject]: TypeName.object,
+  [TAG.ZodTuple]: TypeName.tuple,
+  [TAG.ZodBigInt]: TypeName.bigint,
+  [TAG.ZodSymbol]: TypeName.symbol,
 } as const
 
+// a reverse lookup from string describing the type to its corresponding schema
 export const TypeToSchemaKind = object.invert(SchemaKindToType)
 
 export namespace Context {
